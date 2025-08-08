@@ -13,12 +13,56 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            // core
             $table->string('name');
+            $table->string('username')->unique()->nullable();
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+
+            // contact $ verification
+            $table->string("phone")->nullable();
+            $table->timestamp("phone_verified_at")->nullable();
+
+            // e-commerce fields
+            $table->unsignedBigInteger("default_billing_address_id")->nullable();
+            $table->unsignedBigInteger("default_shipping_address_id")->nullable();
+            $table->decimal("wallet_balance", 12, 2)->default(0);
+            $table->unsignedBigInteger("loyality_points")->default(0);
+
+            // tracking & preferences
+            $table->json("preferences")->nullable();
+            $table->json("metadata")->nullable();
+            $table->string("locale", 10)->default("en");
+            $table->string('timezone', 64)->default('Asia/Karachi');
+
+            // SECURITY & STATUS
+            $table->boolean("is_active")->default(true);
+            $table->boolean("is_blocked")->default(false);
+            $table->timestamp("last_login_at")->nullable();
+            $table->ipAddress("last_login_ip")->nullable();
+
+            // consent  & COMPLAINCE
+            $table->boolean("marketing_opt_in")->default(false);
+            $table->timestamp("gdpr_consented_at")->nullable();
+            $table->timestamp("terms_accepted_at")->nullable();
+
+            // TWO FACTOR AUTH
+            $table->text("two_factor_secret")->nullable();
+            $table->text("two_factor_recovery_codes")->nullable();
+
+            // profile
+            $table->string("profile_photo_path")->nullable();
+
             $table->rememberToken();
             $table->timestamps();
+            $table->softDeletes();
+
+
+            // index
+            $table->index(["last_login_at"]);
+            $table->index(["phone"]);
+            $table->index(["default_billing_address_id"]);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
