@@ -6,7 +6,9 @@ use App\Events\UserLoggedIn;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\RefreshToken;
 use App\Models\User;
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
@@ -76,13 +78,21 @@ class AuthController extends Controller
 
             $token = $user->createToken("api_token")->plainTextToken;
 
+            $refreshToken = Str::random(64);
+
+            RefreshToken::create([
+                "user_id" => $user->id,
+                "token" => hash('sha256', $refreshToken),
+                "expires_at" => Carbon::now()->addDays(7)
+            ]);
 
             return response()->json([
                 "success" => true,
                 "message" => "Login Successful.",
                 "data" => [
                     "user" => $user,
-                    "token" => $token
+                    "token" => $token,
+                    "refresh_token" => $refreshToken
                 ]
 
             ], 200);
@@ -99,7 +109,9 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         try {
+            $user = $request->user();
             $request->user()->currentAccessToken()->delete();
+            RefreshToken::where('user_id', $user->id)->delete();
             return response()->json([
                 "success" => true,
                 "message" => "Logged out successfully."
@@ -198,6 +210,47 @@ class AuthController extends Controller
                 ], 400);
         } catch (Exception $e) {
             response()->json([
+                "success" => false,
+                "message" => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function refreshToken(Request $request)
+    {
+        $request->validate([
+            "refresh_token" => "required"
+        ]);
+
+
+        try {
+            $hashToken = hash("sha256", $request->refreshToken);
+            $storedToken = RefreshToken::where("token", $hashToken)->where("expires_at", ">", now())->first();
+
+            if (!$storedToken) {
+                return response()->json([
+                    "success" => false,
+                    "message" => "Invalid or expires refresh token"
+                ], 401);
+            }
+
+            $user = $storedToken->user();
+
+            // DELETE OLD TOKENS
+            $user->tokens()->delete();
+
+            // Create new access token
+            $newAccessToken = $user->createToken("api_token")->plainTextToken;
+
+
+            return response()->json([
+                'token' => $newAccessToken,
+                'token_type' => 'Bearer',
+                'expires_in' => 15 * 60,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
                 "success" => false,
                 "message" => $e->getMessage()
             ], 500);
