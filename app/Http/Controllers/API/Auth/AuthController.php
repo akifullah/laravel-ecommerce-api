@@ -8,6 +8,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\RefreshToken;
 use App\Models\User;
+use App\Traits\ApiResponse;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Auth\Events\PasswordReset;
@@ -21,7 +22,7 @@ use function Laravel\Prompts\error;
 
 class AuthController extends Controller
 {
-
+    use ApiResponse;
     // user registartion
     public function register(RegisterRequest $request)
     {
@@ -35,25 +36,18 @@ class AuthController extends Controller
                 "password" => Hash::make($data["password"]),
             ]);
 
-            // Fire event to track IP/device
-            event(new UserLoggedIn($user, $request->ip(), $request->userAgent()));
-
-            $token = $user->createToken("api_token")->plainTextToken;
-
-            return response()->json([
-                "success" => true,
+            $responseData = [
                 "message" => "Registration Successful.",
-                "data" => [
-                    "user" => $user,
-                    "token" => $token
-                ]
-            ], 201);
+                "data" =>  $user
+            ];
+
+            return $this->successResponse($responseData, 201);
         } catch (Exception $e) {
-            return response()->json([
-                "success" => false,
+            $responseData = [
                 "message" => "Registration failed.",
-                "error" => $e->getMessage(),
-            ], 500);
+                "error" => $e->getMessage()
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -86,22 +80,23 @@ class AuthController extends Controller
                 "expires_at" => Carbon::now()->addDays(7)
             ]);
 
-            return response()->json([
-                "success" => true,
+
+            $responseData = [
                 "message" => "Login Successful.",
                 "data" => [
                     "user" => $user,
                     "token" => $token,
                     "refresh_token" => $refreshToken
                 ]
+            ];
 
-            ], 200);
+            return $this->successResponse($responseData, 200);
         } catch (Exception $e) {
-            return response()->json([
-                "success" => false,
+            $responseData = [
                 "message" => "Login failed, please try again.",
                 "error" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -112,16 +107,19 @@ class AuthController extends Controller
             $user = $request->user();
             $request->user()->currentAccessToken()->delete();
             RefreshToken::where('user_id', $user->id)->delete();
-            return response()->json([
-                "success" => true,
+
+            $responseData = [
                 "message" => "Logged out successfully."
-            ], 200);
+            ];
+
+            return $this->successResponse($responseData, 200);
         } catch (Exception $e) {
-            return response()->json([
-                "success" => false,
+
+            $responseData = [
                 "message" => "Logout failed. Please try again.",
                 "error" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -130,16 +128,20 @@ class AuthController extends Controller
     {
         try {
             $request->user()->tokens()->delete();
-            return response()->json([
-                "success" => true,
+
+
+            $responseData = [
                 "message" => "logged out from all devices.",
-            ], 200);
+            ];
+
+            return $this->successResponse($responseData, 200);
         } catch (Exception $e) {
-            return response()->json([
-                "success" => false,
+
+            $responseData = [
                 "message" => "Failed to loggout from all devices.",
                 "error" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -157,22 +159,22 @@ class AuthController extends Controller
                 $request->only("email")
             );
 
-            return $status == Password::RESET_LINK_SENT
-                ? response()->json([
-                    "success" => true,
-                    "message" => $status
-                ], 200)
-                :
-                response()->json([
-                    "success" => false,
-                    "message" => $status
-                ], 400);
+            if ($status == Password::RESET_LINK_SENT) {
+                $responseData = ["message" => __($status)];
+                return $this->successResponse($responseData, 200);
+            } else {
+                $responseData = [
+                    "message" => __($status)
+                ];
+                return $this->errorResponse($responseData, 400);
+            }
         } catch (Exception $e) {
-            response()->json([
-                "success" => false,
+
+            $responseData = [
                 "message" => "Failed to send reset link.",
                 "error" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -197,22 +199,20 @@ class AuthController extends Controller
                 }
             );
 
-            return $status == Password::PASSWORD_RESET
-                ?
-                response()->json([
-                    "success" => true,
+            if ($status == Password::PASSWORD_RESET) {
+                $responseData = ["message" => __($status)];
+                return $this->successResponse($responseData, 200);
+            } else {
+                $responseData = [
                     "message" => __($status)
-                ], 200)
-                :
-                response()->json([
-                    "success" => false,
-                    "message" => __($status)
-                ], 400);
+                ];
+                return $this->errorResponse($responseData, 400);
+            }
         } catch (Exception $e) {
-            response()->json([
-                "success" => false,
+            $responseData = [
                 "message" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 
@@ -229,10 +229,13 @@ class AuthController extends Controller
             $storedToken = RefreshToken::where("token", $hashToken)->where("expires_at", ">", now())->first();
 
             if (!$storedToken) {
-                return response()->json([
-                    "success" => false,
-                    "message" => "Invalid or expires refresh token"
-                ], 401);
+
+                $responseData = [
+                   "message" => "Invalid or expires refresh token"
+                ];
+                return $this->errorResponse($responseData, 401);
+
+               
             }
 
             $user = $storedToken->user();
@@ -244,16 +247,22 @@ class AuthController extends Controller
             $newAccessToken = $user->createToken("api_token")->plainTextToken;
 
 
-            return response()->json([
-                'token' => $newAccessToken,
-                'token_type' => 'Bearer',
-                'expires_in' => 15 * 60,
-            ]);
+            $responseData = [
+                "message" => "Refresh token.",
+                "data" => [
+                    'token' => $newAccessToken,
+                    'token_type' => 'Bearer',
+                    'expires_in' => 15 * 60,
+                ]
+            ];
+
+            return $this->successResponse($responseData, 200);
         } catch (Exception $e) {
-            return response()->json([
-                "success" => false,
+
+            $responseData = [
                 "message" => $e->getMessage()
-            ], 500);
+            ];
+            return $this->errorResponse($responseData, 500);
         }
     }
 }
